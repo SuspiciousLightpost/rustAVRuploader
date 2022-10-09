@@ -1,8 +1,10 @@
+use std::ffi::OsStr;
 use std::process::Command;
 use std::str;
 use std::env;
 
 const STANDERD_FILE_NAME: &str = "main";
+const MICROCONTROLLER_UNIT: &str = "atmega2560";
 
 const DUDE: &str = "avrdude";
 const GCC: &str = "avrgcc";
@@ -15,27 +17,18 @@ fn main() {
     let file_name: &str = if args.len() < 3 { STANDERD_FILE_NAME } else { &args[2].as_str() };
 
     if !std::path::Path::new(&format!("{}.hex", file_name)).exists() {
-        compile_file(file_name);
+        /* Compiling the c file to out file */
+        run_command(GCC, vec!["-O2", "-Wall", &format!("-mmcu={}", MICROCONTROLLER_UNIT), &format!("{}.c", file_name), "-o", &format!("{}.out", file_name)]);
+
+        /* Compiling the out file to hex file */
+        run_command(OBJCOPY, vec!["-O", "ihex", &format!("{}.out", file_name), &format!("{}.hex", file_name)]);
     };
     
-    upload_file(file_name, com_port);
-}
-
-fn compile_file(file_name: &str) {
-    /* Compiling the c file to out file */
-    let mut args = ["-O2", "-Wall", "-mmcu=atmega2560", &format!("{}.c", file_name), "-o", &format!("{}.out", file_name)];
-    run_command(GCC,&mut args);
-
-    /* Compiling the out file to hex file */
-    let mut args = ["-O", "ihex", &format!("{}.out", file_name), &format!("{}.hex", file_name)];
-    run_command(OBJCOPY, &mut args);
-}
-
-fn upload_file(file_name: &str, com_port: &str) {
+    /* Sending a reset signal to the board */
     reset_port(com_port);
 
-    let mut args = ["-cstk500v2", "-pm2560", "-v", "-q", "-D", &format!("-Uflash:w:{}.hex:i", file_name), "-b115200", &format!("-P{}", com_port)];
-    run_command(DUDE, &mut args)
+    /* Uploading the hex file to the board */
+    run_command(DUDE, vec!["-cstk500v2", "-pm2560", "-v", "-q", "-D", &format!("-Uflash:w:{}.hex:i", file_name), "-b115200", &format!("-P{}", com_port)])
 }
 
 fn reset_port(com_port: &str) {
@@ -52,7 +45,7 @@ fn reset_port(com_port: &str) {
     port.write_data_terminal_ready(false).unwrap();
 }
 
-fn run_command(program_name: &str, command_args: &mut [&str]) {
+fn run_command(program_name: &str, command_args: impl IntoIterator<Item = impl AsRef<OsStr>>) {
     let output = match Command::new(program_name)
         .args(command_args)
         .output() {
